@@ -1,0 +1,60 @@
+# -------------------------------------------------------------------
+# Python / FastAPI Standard Files
+# -------------------------------------------------------------------
+
+# Byte-compiled / Optimized / Windows files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.DS_Store
+
+# Virtual environment
+# This is crucial. It ignores the entire environment folder.
+# Change 'venv' to match your actual environment name if different (e.g., .venv)
+venv/
+env/
+.venv/
+
+# Environment files (sensitive config, database URLs, secret keys)
+# NEVER commit these, especially in production apps.
+.env
+.flaskenv
+.secrets
+instance/
+
+# Pip / Package Management
+pip-log.txt
+pip-delete-this-log.txt
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.hypo-coverage
+.pytest_cache/
+
+# Testing and Documentation
+build/
+dist/
+*.egg-info/
+
+# Jupyter Notebook/VS Code/IDE Files
+.ipynb_checkpoints
+.vscode/
+# Note: You can uncomment the line below if you want to share VS Code settings
+# but NOT local user settings:
+# .vscode/settings.json
+
+# -------------------------------------------------------------------
+# Database Files (Adjust as needed)
+# -------------------------------------------------------------------
+
+# SQLite files
+*.db
+*.sqlite3
+
+# PostgreSQL / Alembic (Database Migrations)
+# The auto-generated migration files usually contain Python code, 
+# so you often WANT to commit the 'alembic/versions' folder. 
+# Ignore the environment/settings file:
+alembic.ini
