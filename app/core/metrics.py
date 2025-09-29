@@ -197,6 +197,33 @@ def custom_metrics(app):
         
         return response
 
+
+def add_business_metrics_middleware(app):
+    @app.middleware("http")
+    async def business_metrics_middleware(request: Request, call_next):
+        start_time = time.time()
+
+        response = await call_next(request)
+
+        # Record business-specific metrics
+        if request.url.path == "/send" and request.method == "POST":
+            record_message_created()
+        elif request.url.path == "/register" and request.method == "POST":
+            record_user_registered()
+        elif request.url.path == "/login" and request.method == "POST":
+            record_user_logged_in()
+
+        # Record error metrics
+        if response.status_code >= 400:
+            record_error(
+                error_type="http_error",
+                endpoint=request.url.path,
+                status_code=response.status_code
+            )
+
+        return response
+
+
 # Initialize Prometheus FastAPI Instrumentator
 def setup_metrics(app):
     """Setup Prometheus metrics for the FastAPI app"""
@@ -207,11 +234,11 @@ def setup_metrics(app):
     # Add default metrics
     instrumentator.add(metrics.default())
     
-    # Add custom metrics
-    instrumentator.add(custom_metrics)
-    
     # Instrument the app
     instrumentator.instrument(app)
+
+    # Attach business metrics middleware
+    add_business_metrics_middleware(app)
     
     # Expose metrics endpoint
     @app.get("/metrics")

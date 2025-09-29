@@ -7,7 +7,6 @@ from app.core.database import (
 from app.core.cache import cache_manager
 from app.core.metrics import setup_metrics
 from app.core.logging import setup_logging, chat_logger
-import logging
 
 # Setup structured logging
 setup_logging()
@@ -21,11 +20,11 @@ app = FastAPI(
 # Setup Prometheus metrics
 setup_metrics(app)
 
-
 @app.on_event("startup")
 async def on_startup():
 	"""Initialize database, Citus extension, and Redis cache on startup"""
 	try:
+
 		chat_logger.system_event(
 			event_type="application_startup",
 			component="chat-platform",
@@ -94,6 +93,9 @@ async def on_shutdown():
 		logger.info("Application shutdown completed successfully")
 	except Exception as e:
 		logger.error(f"Error during shutdown: {e}")
+
+
+	
 
 
 app.include_router(core_router)

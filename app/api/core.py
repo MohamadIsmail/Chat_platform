@@ -3,11 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List
-from sqlalchemy.ext.asyncio import AsyncEngine
-from app.core.database import get_db, Base, engine
+
+from app.core.database import get_db
 from app.core.security import get_password_hash, verify_password, create_access_token, decode_token
 from app.models.user import User
-from app.models.message import DirectMessage
 from app.schemas.user import UserCreate, UserResponse
 from app.schemas.message import DirectMessageCreate, DirectMessageResponse
 from app.services.user_service import UserService
@@ -19,17 +18,6 @@ router = APIRouter(prefix="", tags=["core"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login/token")
 # Ensure tables exist in this minimal step
 
-#Base.metadata.create_all(bind=engine)
-async def create_db_and_tables(async_engine: AsyncEngine):
-    """
-    Creates all database tables using the asynchronous engine.
-    """
-    async with async_engine.begin() as conn:
-        # Use run_sync to execute the synchronous DDL operation (create_all)
-        # on the underlying synchronous connection/engine
-        await conn.run_sync(Base.metadata.create_all)
-        
-    print("Database tables created successfully.")
 
 @router.post("/register", response_model=UserResponse)
 async def register(user_in: UserCreate, db: Session = Depends(get_db)):
