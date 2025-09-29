@@ -1,0 +1,157 @@
+groups:
+  - name: chat-platform.rules
+    rules:
+      # Application Health Rules
+      - alert: ChatAppDown
+        expr: up{job="chat-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: chat-app
+        annotations:
+          summary: "Chat application is down"
+          description: "Chat application has been down for more than 1 minute"
+
+      - alert: ChatAppHighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: chat-app
+        annotations:
+          summary: "High error rate in chat application"
+          description: "Error rate is {{ $value }} errors per second"
+
+      - alert: ChatAppHighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: chat-app
+        annotations:
+          summary: "High response time in chat application"
+          description: "95th percentile response time is {{ $value }} seconds"
+
+      # Database Rules
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: postgres
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL database has been down for more than 1 minute"
+
+      - alert: PostgreSQLHighConnections
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: postgres
+        annotations:
+          summary: "High PostgreSQL connection usage"
+          description: "PostgreSQL connection usage is {{ $value }}%"
+
+      - alert: PostgreSQLSlowQueries
+        expr: rate(pg_stat_database_tup_returned[5m]) / rate(pg_stat_database_tup_fetched[5m]) < 0.1
+        for: 10m
+        labels:
+          severity: warning
+          service: postgres
+        annotations:
+          summary: "Slow PostgreSQL queries detected"
+          description: "Query efficiency is low: {{ $value }}"
+
+      # Redis Rules
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis cache has been down for more than 1 minute"
+
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_config_maxmemory > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "High Redis memory usage"
+          description: "Redis memory usage is {{ $value }}%"
+
+      - alert: RedisLowHitRate
+        expr: redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total) < 0.8
+        for: 10m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Low Redis cache hit rate"
+          description: "Redis cache hit rate is {{ $value }}%"
+
+      # Business Logic Rules
+      - alert: HighMessageVolume
+        expr: rate(chat_messages_created_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: info
+          service: chat-app
+        annotations:
+          summary: "High message volume detected"
+          description: "Message creation rate is {{ $value }} messages per second"
+
+      - alert: HighUserRegistration
+        expr: rate(chat_users_registered_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: info
+          service: chat-app
+        annotations:
+          summary: "High user registration rate"
+          description: "User registration rate is {{ $value }} users per second"
+
+      - alert: CacheMissRateHigh
+        expr: rate(chat_cache_misses_total[5m]) / rate(chat_cache_requests_total[5m]) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+          service: chat-app
+        annotations:
+          summary: "High cache miss rate"
+          description: "Cache miss rate is {{ $value }}%"
+
+      # System Resource Rules
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}%"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}%"
+
+      - alert: DiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          service: system
+        annotations:
+          summary: "Low disk space"
+          description: "Disk usage is {{ $value }}%"

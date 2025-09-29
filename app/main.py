@@ -5,40 +5,83 @@ from app.core.database import (
 	init_citus_extension, setup_citus_distribution
 )
 from app.core.cache import cache_manager
+from app.core.metrics import setup_metrics
+from app.core.logging import setup_logging, chat_logger
 import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Setup structured logging
+setup_logging()
 
 app = FastAPI(
 	title="Chat Platform API",
-	description="Distributed chat platform with PostgreSQL, Citus, and Redis caching",
+	description="Distributed chat platform with PostgreSQL, Citus, Redis caching, and monitoring",
 	version="1.0.0"
 )
+
+# Setup Prometheus metrics
+setup_metrics(app)
 
 
 @app.on_event("startup")
 async def on_startup():
 	"""Initialize database, Citus extension, and Redis cache on startup"""
 	try:
+		chat_logger.system_event(
+			event_type="application_startup",
+			component="chat-platform",
+			status="starting",
+			details="Initializing services"
+		)
+		
 		# Initialize Redis cache
 		await cache_manager.connect()
-		logger.info("Redis cache initialized successfully")
+		chat_logger.system_event(
+			event_type="service_initialized",
+			component="redis",
+			status="started",
+			details="Redis cache initialized successfully"
+		)
 		
 		# Create tables
 		await create_tables()
-		logger.info("Database tables created successfully")
+		chat_logger.system_event(
+			event_type="service_initialized",
+			component="database",
+			status="started",
+			details="Database tables created successfully"
+		)
 		
 		# Initialize Citus extension
 		await init_citus_extension()
+		chat_logger.system_event(
+			event_type="service_initialized",
+			component="citus",
+			status="started",
+			details="Citus extension initialized"
+		)
 		
 		# Setup Citus distribution
 		await setup_citus_distribution()
+		chat_logger.system_event(
+			event_type="service_initialized",
+			component="citus",
+			status="configured",
+			details="Citus distribution setup completed"
+		)
 		
-		logger.info("Application startup completed successfully")
+		chat_logger.system_event(
+			event_type="application_startup",
+			component="chat-platform",
+			status="completed",
+			details="All services initialized successfully"
+		)
 	except Exception as e:
-		logger.error(f"Error during startup: {e}")
+		chat_logger.system_event(
+			event_type="application_startup",
+			component="chat-platform",
+			status="failed",
+			details=f"Startup failed: {str(e)}"
+		)
 		raise
 
 

@@ -130,6 +130,18 @@ start_prod_services() {
     print_status "Application: http://localhost (HTTP) or https://localhost (HTTPS)"
 }
 
+# Start monitoring services
+start_monitoring_services() {
+    print_status "Starting monitoring services (Prometheus, Grafana, Loki)..."
+    
+    docker-compose --profile monitoring up -d
+    
+    print_success "Monitoring services started"
+    print_status "Grafana: http://localhost:3000 (admin/admin_password)"
+    print_status "Prometheus: http://localhost:9090"
+    print_status "Loki: http://localhost:3100"
+}
+
 # Show service status
 show_status() {
     print_status "Service Status:"
@@ -152,6 +164,18 @@ show_status() {
     
     if docker-compose ps | grep -q "nginx"; then
         echo "  🌍 Nginx (Production): http://localhost"
+    fi
+    
+    if docker-compose ps | grep -q "grafana"; then
+        echo "  📊 Grafana: http://localhost:3000"
+    fi
+    
+    if docker-compose ps | grep -q "prometheus"; then
+        echo "  📈 Prometheus: http://localhost:9090"
+    fi
+    
+    if docker-compose ps | grep -q "loki"; then
+        echo "  📝 Loki: http://localhost:3100"
     fi
 }
 
@@ -176,17 +200,22 @@ main() {
             start_services
             start_prod_services
             ;;
-        "core")
-            start_services
-            ;;
-        *)
-            print_error "Invalid option: $1"
-            echo "Usage: $0 [dev|prod|core]"
-            echo "  dev  - Start all services including development tools (default)"
-            echo "  prod - Start production services with Nginx"
-            echo "  core - Start only core services (app, postgres, redis)"
-            exit 1
-            ;;
+	"core")
+		start_services
+		;;
+	"monitoring")
+		start_services
+		start_monitoring_services
+		;;
+	*)
+		print_error "Invalid option: $1"
+		echo "Usage: $0 [dev|prod|core|monitoring]"
+		echo "  dev        - Start all services including development tools (default)"
+		echo "  prod       - Start production services with Nginx"
+		echo "  core       - Start only core services (app, postgres, redis)"
+		echo "  monitoring - Start core services with monitoring stack"
+		exit 1
+		;;
     esac
     
     show_status
