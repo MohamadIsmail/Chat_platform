@@ -10,6 +10,8 @@ from app.models.user import User
 from app.models.message import DirectMessage
 from app.schemas.user import UserCreate, UserResponse
 from app.schemas.message import DirectMessageCreate, DirectMessageResponse
+from app.services.user_service import UserService
+from app.services.message_service import MessageService
 
 
 router = APIRouter(prefix="", tags=["core"])
@@ -20,57 +22,65 @@ Base.metadata.create_all(bind=engine)
 
 
 @router.post("/register", response_model=UserResponse)
-def register(user_in: UserCreate, db: Session = Depends(get_db)):
-	# Check existing
-	if db.query(User).filter((User.username == user_in.username) | (User.email == user_in.email)).first():
+async def register(user_in: UserCreate, db: Session = Depends(get_db)):
+	user_service = UserService(db)
+	
+	# Check existing using cached service
+	user_exists = await user_service.check_user_exists(
+		username=user_in.username, 
+		email=user_in.email
+	)
+	if user_exists:
 		raise HTTPException(status_code=400, detail="Username or email already registered")
 
-	user = User(
-		username=user_in.username,
-		email=user_in.email,
-		hashed_password=get_password_hash(user_in.password)
+	# Create user using cached service
+	user = await user_service.create_user(
+		user_in, 
+		get_password_hash(user_in.password)
 	)
-	db.add(user)
-	db.commit()
-	db.refresh(user)
 	return UserResponse(id=user.id, username=user.username, email=user.email)
 
 
 @router.post("/login")
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-	user = db.query(User).filter(User.username == form_data.username).first()
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+	user_service = UserService(db)
+	
+	# Use cached service to get user
+	user = await user_service.get_user_by_username(form_data.username)
 	if not user or not verify_password(form_data.password, user.hashed_password):
 		raise HTTPException(status_code=400, detail="Incorrect username or password")
+
+	# Update user's online status
+	await user_service.update_user_online_status(user.id, True)
 
 	access_token = create_access_token(data={"sub": str(user.id)})
 	return {"access_token": access_token, "token_type": "bearer"}
 
 
-def get_current_user(token: str, db: Session) -> User:
+async def get_current_user(token: str, db: Session) -> User:
 	payload = decode_token(token)
 	if not payload or not payload.get("sub"):
 		raise HTTPException(status_code=401, detail="Invalid token")
-	user = db.query(User).get(int(payload["sub"]))
+	
+	user_service = UserService(db)
+	user = await user_service.get_user_by_id(int(payload["sub"]))
 	if not user:
 		raise HTTPException(status_code=401, detail="User not found")
 	return user
 
 
 @router.post("/send", response_model=DirectMessageResponse)
-def send_message(message_in: DirectMessageCreate, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-	current_user = get_current_user(token, db)
-	recipient = db.query(User).get(message_in.recipient_id)
+async def send_message(message_in: DirectMessageCreate, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+	current_user = await get_current_user(token, db)
+	
+	user_service = UserService(db)
+	recipient = await user_service.get_user_by_id(message_in.recipient_id)
 	if not recipient:
 		raise HTTPException(status_code=404, detail="Recipient not found")
 
-	msg = DirectMessage(
-		content=message_in.content,
-		sender_id=current_user.id,
-		recipient_id=message_in.recipient_id
-	)
-	db.add(msg)
-	db.commit()
-	db.refresh(msg)
+	message_service = MessageService(db)
+	msg = await message_service.create_message(message_in, current_user.id)
+	
 	return DirectMessageResponse(
 		id=msg.id,
 		sender_id=msg.sender_id,
@@ -81,12 +91,11 @@ def send_message(message_in: DirectMessageCreate, token: str = Depends(oauth2_sc
 
 
 @router.get("/messages", response_model=List[DirectMessageResponse])
-def get_messages(with_user_id: int, token: str, db: Session = Depends(get_db)):
-	current_user = get_current_user(token, db)
-	messages = db.query(DirectMessage).filter(
-		((DirectMessage.sender_id == current_user.id) & (DirectMessage.recipient_id == with_user_id)) |
-		((DirectMessage.sender_id == with_user_id) & (DirectMessage.recipient_id == current_user.id))
-	).order_by(DirectMessage.created_at.asc()).all()
+async def get_messages(with_user_id: int, token: str, db: Session = Depends(get_db)):
+	current_user = await get_current_user(token, db)
+	
+	message_service = MessageService(db)
+	messages = await message_service.get_conversation_messages(current_user.id, with_user_id)
 
 	return [
 		DirectMessageResponse(
@@ -96,6 +105,87 @@ def get_messages(with_user_id: int, token: str, db: Session = Depends(get_db)):
 			content=m.content,
 			created_at=m.created_at
 		) for m in messages
+	]
+
+
+@router.get("/conversations")
+async def get_conversations(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+	"""Get list of conversation partners with unread counts"""
+	current_user = await get_current_user(token, db)
+	
+	message_service = MessageService(db)
+	conversations = await message_service.get_conversation_partners(current_user.id)
+	
+	return [
+		{
+			"user_id": partner_id,
+			"username": username,
+			"unread_count": unread_count
+		}
+		for partner_id, username, unread_count in conversations
+	]
+
+
+@router.get("/unread-count")
+async def get_unread_count(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+	"""Get total unread message count for current user"""
+	current_user = await get_current_user(token, db)
+	
+	message_service = MessageService(db)
+	count = await message_service.get_unread_count(current_user.id)
+	
+	return {"unread_count": count}
+
+
+@router.post("/messages/{message_id}/read")
+async def mark_message_read(message_id: int, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+	"""Mark a message as read"""
+	current_user = await get_current_user(token, db)
+	
+	message_service = MessageService(db)
+	success = await message_service.mark_message_as_read(message_id, current_user.id)
+	
+	if not success:
+		raise HTTPException(status_code=404, detail="Message not found or not accessible")
+	
+	return {"message": "Message marked as read"}
+
+
+@router.get("/users/search")
+async def search_users(query: str, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+	"""Search users by username or display name"""
+	current_user = await get_current_user(token, db)
+	
+	user_service = UserService(db)
+	users = await user_service.search_users(query)
+	
+	return [
+		{
+			"id": user.id,
+			"username": user.username,
+			"display_name": user.display_name,
+			"is_online": user.last_seen is not None
+		}
+		for user in users if user.id != current_user.id  # Exclude current user
+	]
+
+
+@router.get("/users/online")
+async def get_online_users(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+	"""Get list of online users"""
+	current_user = await get_current_user(token, db)
+	
+	user_service = UserService(db)
+	online_users = await user_service.get_online_users()
+	
+	return [
+		{
+			"id": user.id,
+			"username": user.username,
+			"display_name": user.display_name,
+			"last_seen": user.last_seen
+		}
+		for user in online_users if user.id != current_user.id  # Exclude current user
 	]
 
 

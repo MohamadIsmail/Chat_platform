@@ -8,6 +8,19 @@ class Settings(BaseSettings):
 	# Fallback to SQLite for development if PostgreSQL is not available
 	use_sqlite_fallback: bool = True
 	
+	# Redis configuration
+	redis_url: str = "redis://localhost:6379/0"
+	redis_password: str = ""
+	redis_max_connections: int = 20
+	redis_retry_on_timeout: bool = True
+	
+	# Cache settings
+	cache_enabled: bool = True
+	cache_default_ttl: int = 3600  # 1 hour default TTL
+	cache_user_ttl: int = 1800     # 30 minutes for user data
+	cache_message_ttl: int = 300   # 5 minutes for messages
+	cache_conversation_ttl: int = 600  # 10 minutes for conversation lists
+	
 	# Application settings
 	secret_key: str = "change-this-in-production"
 	algorithm: str = "HS256"
@@ -38,6 +51,13 @@ class Settings(BaseSettings):
 			return True
 		except ImportError:
 			return False
+	
+	@property
+	def get_redis_url(self) -> str:
+		"""Get Redis URL with password if provided"""
+		if self.redis_password:
+			return f"redis://:{self.redis_password}@{self.redis_url.split('://')[1]}"
+		return self.redis_url
 
 
 settings = Settings()
