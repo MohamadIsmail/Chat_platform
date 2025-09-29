@@ -64,7 +64,7 @@ newgrp docker
 ### 1. Clone and Setup
 ```bash
 # Clone the repository
-git clone <your-repo-url>
+git clone https://github.com/MohamadIsmail/Chat_platform.git
 cd Chat_platform
 
 # Make scripts executable
