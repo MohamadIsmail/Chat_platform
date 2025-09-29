@@ -1,0 +1,161 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with Citus Extension
+  postgres:
+    image: citusdata/citus:12.1
+    container_name: chat_postgres
+    environment:
+      POSTGRES_DB: chat_platform
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+    networks:
+      - chat_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chat_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: chat_redis
+    command: redis-server --appendonly yes --requirepass redis_password
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - chat_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # FastAPI Application
+  app:
+    build: .
+    container_name: chat_app
+    environment:
+      # Database configuration
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres_password@postgres:5432/chat_platform
+      USE_SQLITE_FALLBACK: "false"
+      
+      # Redis configuration
+      REDIS_URL: redis://redis:6379/0
+      REDIS_PASSWORD: redis_password
+      REDIS_MAX_CONNECTIONS: 20
+      REDIS_RETRY_ON_TIMEOUT: "true"
+      
+      # Cache settings
+      CACHE_ENABLED: "true"
+      CACHE_DEFAULT_TTL: 3600
+      CACHE_USER_TTL: 1800
+      CACHE_MESSAGE_TTL: 300
+      CACHE_CONVERSATION_TTL: 600
+      
+      # Application settings
+      SECRET_KEY: your-super-secret-key-change-in-production
+      DEBUG: "true"
+      HOST: 0.0.0.0
+      PORT: 8000
+      
+      # Citus settings
+      CITUS_ENABLED: "true"
+      CITUS_DISTRIBUTION_COLUMN: user_id
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+      - ./config.py:/app/config.py
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chat_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Nginx Reverse Proxy (Optional)
+  nginx:
+    image: nginx:alpine
+    container_name: chat_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - app
+    networks:
+      - chat_network
+    restart: unless-stopped
+    profiles:
+      - production
+
+  # PgAdmin (Database Management)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: chat_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@chatplatform.com
+      PGADMIN_DEFAULT_PASSWORD: admin_password
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - chat_network
+    restart: unless-stopped
+    profiles:
+      - development
+
+  # Redis Commander (Redis Management)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: chat_redis_commander
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:redis_password
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - chat_network
+    restart: unless-stopped
+    profiles:
+      - development
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  chat_network:
+    driver: bridge
